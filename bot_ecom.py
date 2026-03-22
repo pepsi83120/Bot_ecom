@@ -360,15 +360,15 @@ def plan_contenu(profile, produit=None):
 
 
 def generer_image_hf(prompt):
-    """Génère une image via Hugging Face Inference API"""
+    """Génère une image via Hugging Face"""
     try:
         r = requests.post(
-            "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+            "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
             headers={"Authorization": f"Bearer {HF_API_KEY}"},
             json={"inputs": prompt},
             timeout=120
         )
-        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+        if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
             return r.content
         print(f"Erreur HF: {r.status_code} — {r.text[:200]}")
         return None
