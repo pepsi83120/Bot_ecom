@@ -136,8 +136,12 @@ def trouver_tendances(profile, categorie=None):
         f"• Vente : [prix recommandé]\n"
         f"• Marge : [marge brute %]\n"
         f"• TikTok Ads : [score/10]\n"
-        f"• Meta Ads : [score/10]\n"
-        f"• Recherche Aliexpress : [mots-clés à taper]\n\n"
+        f"• Meta Ads : [score/10]\n\n"
+        f"• 🔗 Fournisseurs :\n"
+        f"  1. AliExpress : https://fr.aliexpress.com/wholesale?SearchText=[mots-clés-produit]\n"
+        f"  2. Alibaba : https://www.alibaba.com/trade/search?SearchText=[mots-clés-produit]\n"
+        f"  3. CJ Dropshipping : https://cjdropshipping.com/list.html?searchKey=[mots-clés-produit]\n\n"
+        f"Remplace [mots-clés-produit] par les vrais mots-clés du produit en anglais dans les URLs. "
         f"Sépare chaque produit par une ligne vide. Classe du plus au moins prometteur."
     )
     return ask_groq(prompt, sys)
