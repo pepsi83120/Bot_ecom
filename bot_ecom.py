@@ -768,34 +768,31 @@ def cmd_image(message):
 
     # Cas spécial : 5 images marketing pour fiche produit
     if type_image == "produit":
-        bot.reply_to(message, f"🎨 Génération de 5 images marketing pour *{produit}*...\n⏳ 30-60 secondes")
+        bot.reply_to(message, f"🎨 Génération de 5 images marketing pour *{produit}*...\n⏳ Patience, 1-2 minutes au total", parse_mode="Markdown")
         urls, titres = generer_5_images(produit, profile)
         for i, (url, titre) in enumerate(zip(urls, titres)):
             try:
-                r = requests.get(url, timeout=40)
-                r.raise_for_status()
                 bot.send_photo(
                     message.chat.id,
-                    r.content,
+                    url,
                     caption=f"🎨 *{titre}*\n_{produit}_",
                     parse_mode="Markdown"
                 )
             except Exception as e:
                 print(f"Erreur image {i+1}: {e}")
-                bot.send_message(message.chat.id, f"⚠️ Image {i+1} — lien direct :\n{url}")
+                bot.send_message(message.chat.id, f"⚠️ Image {i+1} — téléchargez ici :\n{url}")
         bot.send_message(message.chat.id,
             f"✅ *5 images générées pour {produit}*\n\n"
-            f"💡 Utilisez-les directement sur :\n"
+            f"💡 Utilisez-les sur :\n"
             f"• Fiche produit Shopify\n"
             f"• Posts Instagram/TikTok\n"
-            f"• Facebook/Instagram Ads\n"
-            f"• Stories et Reels",
+            f"• Facebook/Instagram Ads",
             parse_mode="Markdown")
         return
 
     # Autres types : 1 image
     import urllib.parse
-    bot.reply_to(message, f"🎨 Génération de l'image en cours... (10-20 secondes)")
+    bot.reply_to(message, f"🎨 Génération en cours... (20-40 secondes)")
     prompts = {
         "lifestyle": f"lifestyle photo of {produit}, beautiful setting, natural light, person using product, high quality photography, premium style",
         "pub":       f"advertising banner for {produit}, modern design, eye-catching, professional, colorful background, text space, high quality",
@@ -803,23 +800,21 @@ def cmd_image(message):
     }
     encoded = urllib.parse.quote(prompts[type_image])
     url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true"
+    labels = {
+        "lifestyle": "Photo d'ambiance",
+        "pub":       "Visuel publicitaire",
+        "tiktok":    "Style TikTok viral",
+    }
     try:
-        r = requests.get(url, timeout=40)
-        r.raise_for_status()
-        labels = {
-            "lifestyle": "Photo d'ambiance",
-            "pub":       "Visuel publicitaire",
-            "tiktok":    "Style TikTok viral",
-        }
         bot.send_photo(
             message.chat.id,
-            r.content,
+            url,
             caption=f"🎨 *{labels[type_image]}* — {produit}",
             parse_mode="Markdown"
         )
     except Exception as e:
         print(f"Erreur image : {e}")
-        bot.reply_to(message, f"⚠️ Ouvrez ce lien pour télécharger l'image :\n{url}")
+        bot.reply_to(message, f"⚠️ Téléchargez l'image ici :\n{url}")
 
 
 @bot.message_handler(commands=["adduser"])
