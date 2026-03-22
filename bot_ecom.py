@@ -13,6 +13,7 @@ load_dotenv()
 BOT_TOKEN    = os.environ.get("ECOM_BOT_TOKEN")
 ADMIN_ID     = int(os.environ.get("ADMIN_ID", "0"))
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+HF_API_KEY   = os.environ.get("HF_API_KEY", "")
 
 if not BOT_TOKEN:
     raise ValueError("❌ Variable ECOM_BOT_TOKEN manquante !")
@@ -358,19 +359,33 @@ def plan_contenu(profile, produit=None):
     return ask_groq(prompt, sys)
 
 
+def generer_image_hf(prompt):
+    """Génère une image via Hugging Face Inference API"""
+    try:
+        r = requests.post(
+            "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+            headers={"Authorization": f"Bearer {HF_API_KEY}"},
+            json={"inputs": prompt},
+            timeout=120
+        )
+        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+            return r.content
+        print(f"Erreur HF: {r.status_code} — {r.text[:200]}")
+        return None
+    except Exception as e:
+        print(f"Erreur HF: {e}")
+        return None
+
 def generer_5_images(produit, profile):
-    """Génère 5 images marketing via Pollinations.ai"""
-    p = urllib.parse.quote
-    prod = produit[:50]  # Limiter la longueur
-
-    urls = [
-        f"https://image.pollinations.ai/prompt/{p(f'marketing photo {prod}, white background, premium, social media')}?width=1080&height=1080&nologo=true",
-        f"https://image.pollinations.ai/prompt/{p(f'lifestyle {prod}, person using it, natural light, modern')}?width=1080&height=1080&nologo=true",
-        f"https://image.pollinations.ai/prompt/{p(f'benefits {prod}, icons, clean design, professional infographic')}?width=1080&height=1080&nologo=true",
-        f"https://image.pollinations.ai/prompt/{p(f'before after {prod}, split screen, transformation, marketing')}?width=1080&height=1080&nologo=true",
-        f"https://image.pollinations.ai/prompt/{p(f'buy now {prod}, urgent offer, bold colors, call to action banner')}?width=1080&height=1080&nologo=true",
+    """Génère 5 images marketing via Hugging Face"""
+    prod = produit[:60]
+    prompts = [
+        f"professional product marketing photo of {prod}, white background, studio lighting, premium e-commerce style, 4k",
+        f"lifestyle photo of {prod}, person using it, natural light, modern interior, authentic, high quality",
+        f"infographic showing benefits of {prod}, clean icons, blue white design, professional, minimal text",
+        f"before after split screen {prod}, left problem right solution, powerful transformation visual",
+        f"sale banner {prod}, limited offer, bold red orange colors, buy now, urgency, high contrast",
     ]
-
     titres = [
         "1️⃣ Accroche — Capter l'attention",
         "2️⃣ Produit en situation",
@@ -378,8 +393,7 @@ def generer_5_images(produit, profile):
         "4️⃣ Avant / Après",
         "5️⃣ Call to Action",
     ]
-
-    return urls, titres
+    return prompts, titres
 
 def nettoyer(text):
     import re
@@ -752,48 +766,44 @@ def cmd_image(message):
 
     # Cas spécial : 5 images marketing pour fiche produit
     if type_image == "produit":
-        bot.reply_to(message, f"🎨 Génération de 5 images pour *{produit}*...\n⏳ Patience, environ 2-3 minutes", parse_mode="Markdown")
-        urls, titres = generer_5_images(produit, profile)
-        for i, (url, titre) in enumerate(zip(urls, titres)):
+        bot.reply_to(message, f"🎨 Génération de 5 images pour *{produit}*...\n⏳ Environ 2-3 minutes", parse_mode="Markdown")
+        prompts, titres = generer_5_images(produit, profile)
+        for i, (prompt, titre) in enumerate(zip(prompts, titres)):
             try:
-                bot.send_message(message.chat.id, f"⏳ Image {i+1}/5 en cours...")
-                r = requests.get(url, timeout=120)
-                r.raise_for_status()
-                bot.send_photo(
-                    message.chat.id,
-                    r.content,
-                    caption=f"🎨 *{titre}*\n_{produit}_",
-                    parse_mode="Markdown"
-                )
+                bot.send_message(message.chat.id, f"⏳ Image {i+1}/5...")
+                image_bytes = generer_image_hf(prompt)
+                if image_bytes:
+                    bot.send_photo(
+                        message.chat.id,
+                        image_bytes,
+                        caption=f"🎨 *{titre}*\n_{produit}_",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    bot.send_message(message.chat.id, f"❌ Image {i+1} échouée")
             except Exception as e:
                 print(f"Erreur image {i+1}: {e}")
-                bot.send_message(message.chat.id, f"❌ Image {i+1} échouée — réessayez plus tard")
-        bot.send_message(message.chat.id,
-            f"✅ Terminé ! Images prêtes pour :\n• Fiche Shopify\n• Ads Meta/TikTok\n• Posts réseaux sociaux")
+        bot.send_message(message.chat.id, "✅ Terminé ! Images prêtes pour Shopify, Ads et réseaux sociaux.")
         return
 
     # Autres types : 1 image
-    bot.reply_to(message, f"🎨 Génération en cours... (30-60 secondes)")
-    prompts = {
-        "lifestyle": f"lifestyle photo of {produit}, beautiful setting, natural light, person using product, high quality photography, premium style",
-        "pub":       f"advertising banner for {produit}, modern design, eye-catching, professional, colorful background, text space, high quality",
-        "tiktok":    f"viral tiktok style photo of {produit}, trendy aesthetic, young lifestyle, bright colors, social media ready, gen z style",
+    bot.reply_to(message, "🎨 Génération en cours... (30-60 secondes)")
+    prompts_single = {
+        "lifestyle": f"lifestyle photo of {produit}, person using it, natural light, modern setting, premium",
+        "pub":       f"advertising banner {produit}, modern design, colorful, professional, high quality",
+        "tiktok":    f"tiktok viral style {produit}, trendy, bright colors, gen z aesthetic, social media",
     }
-    encoded = urllib.parse.quote(prompts[type_image])
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true"
     labels = {"lifestyle": "Photo d'ambiance", "pub": "Visuel publicitaire", "tiktok": "Style TikTok viral"}
-    try:
-        r = requests.get(url, timeout=120)
-        r.raise_for_status()
+    image_bytes = generer_image_hf(prompts_single[type_image])
+    if image_bytes:
         bot.send_photo(
             message.chat.id,
-            r.content,
+            image_bytes,
             caption=f"🎨 *{labels[type_image]}* — {produit}",
             parse_mode="Markdown"
         )
-    except Exception as e:
-        print(f"Erreur image : {e}")
-        bot.reply_to(message, f"❌ Génération échouée. Réessayez dans quelques secondes.")
+    else:
+        bot.reply_to(message, "❌ Génération échouée. Réessayez dans 1 minute.")
 
 
 @bot.message_handler(commands=["adduser"])
