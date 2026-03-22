@@ -360,40 +360,24 @@ def plan_contenu(profile, produit=None):
 
 def generer_5_images(produit, profile):
     """Génère 5 images marketing via Pollinations.ai"""
+    p = urllib.parse.quote
+    prod = produit[:50]  # Limiter la longueur
 
-    niche = profile.get("niche", "e-commerce")
-    cible = profile.get("cible", "acheteurs en ligne")
-
-    prompts = [
-        # Image 1 — Accroche
-        f"professional marketing image for {produit}, bold eye-catching title text overlay, modern premium design, clean white and gold background, social media ready, high quality 4k, minimalist style",
-
-        # Image 2 — Produit en situation
-        f"lifestyle product photo of {produit} in real use situation, person using product, natural light, modern home setting, premium photography, authentic moment, high quality",
-
-        # Image 3 — Bénéfices
-        f"benefits infographic for {produit}, 3 key benefits with icons, clean modern design, blue and white color scheme, professional layout, minimal text, premium style, social media optimized",
-
-        # Image 4 — Avant/Après
-        f"before and after transformation result of {produit}, split screen comparison, left side problem right side solution, clean design, powerful visual impact, professional marketing style",
-
-        # Image 5 — Call to Action
-        f"urgent call to action marketing banner for {produit}, limited offer badge, countdown urgency, bold red and gold colors, buy now button, premium design, high conversion style",
+    urls = [
+        f"https://image.pollinations.ai/prompt/{p(f'marketing photo {prod}, white background, premium, social media')}?width=1080&height=1080&nologo=true",
+        f"https://image.pollinations.ai/prompt/{p(f'lifestyle {prod}, person using it, natural light, modern')}?width=1080&height=1080&nologo=true",
+        f"https://image.pollinations.ai/prompt/{p(f'benefits {prod}, icons, clean design, professional infographic')}?width=1080&height=1080&nologo=true",
+        f"https://image.pollinations.ai/prompt/{p(f'before after {prod}, split screen, transformation, marketing')}?width=1080&height=1080&nologo=true",
+        f"https://image.pollinations.ai/prompt/{p(f'buy now {prod}, urgent offer, bold colors, call to action banner')}?width=1080&height=1080&nologo=true",
     ]
 
     titres = [
         "1️⃣ Accroche — Capter l'attention",
-        "2️⃣ Produit en situation — Utilisation réelle",
-        "3️⃣ Bénéfices — Points clés",
-        "4️⃣ Résultats — Avant/Après",
-        "5️⃣ Call to Action — Urgence",
+        "2️⃣ Produit en situation",
+        "3️⃣ Bénéfices principaux",
+        "4️⃣ Avant / Après",
+        "5️⃣ Call to Action",
     ]
-
-    urls = []
-    for prompt in prompts:
-        encoded = urllib.parse.quote(prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&seed={hash(prompt) % 99999}"
-        urls.append(url)
 
     return urls, titres
 
