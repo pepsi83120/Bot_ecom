@@ -125,7 +125,93 @@ def nettoyer(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-def analyser_vente(profile, produit, prix_achat):
+def analyser_depuis_lien(profile, url):
+    """Extrait les infos produit depuis l'URL et fait une analyse"""
+    import re
+
+    # Extraire des infos depuis l'URL elle-même
+    source = "AliExpress" if "aliexpress" in url else "Alibaba" if "alibaba" in url else "CJ" if "cjdropshipping" in url else "Fournisseur"
+
+    # Tenter de récupérer la page
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Accept-Language": "fr-FR,fr;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        r = requests.get(url, headers=headers, timeout=20)
+        content = r.text
+
+        # Extraire le titre
+        title_match = re.search(r'<title[^>]*>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
+        title = title_match.group(1).strip() if title_match else ""
+        title = re.sub(r'\s*[-|]\s*AliExpress.*$', '', title, flags=re.IGNORECASE).strip()
+        title = re.sub(r'\s*[-|]\s*Alibaba.*$', '', title, flags=re.IGNORECASE).strip()
+
+        # Extraire le prix
+        price_patterns = [
+            r'"price"[:\s]+"?([\d.,]+)"?',
+            r'"salePrice"[:\s]+"?([\d.,]+)"?',
+            r'"discountPrice"[:\s]+"?([\d.,]+)"?',
+            r'US\s*\$\s*([\d.,]+)',
+            r'€\s*([\d.,]+)',
+        ]
+        prix = None
+        for pattern in price_patterns:
+            match = re.search(pattern, content)
+            if match:
+                prix = match.group(1)
+                break
+
+        if title and len(title) > 5:
+            return {"titre": title[:150], "prix": prix, "source": source}
+
+    except Exception as e:
+        print(f"Erreur scraping lien: {e}")
+
+    # Si scraping échoue, extraire depuis l'URL
+    url_clean = url.split("?")[0].split("/")[-1]
+    url_clean = re.sub(r'[-_]', ' ', url_clean)
+    url_clean = re.sub(r'\d+', '', url_clean).strip()
+
+    if len(url_clean) > 5:
+        return {"titre": url_clean[:100], "prix": None, "source": source}
+
+    return None
+
+def analyse_depuis_lien_groq(profile, infos, url):
+    sys = get_system(profile)
+    prix_info = f"Prix fournisseur trouvé : {infos['prix']}€" if infos.get('prix') else "Prix non détecté — à vérifier sur le site"
+    prompt = (
+        f"Analyse ce produit dropshipping trouvé sur {infos['source']} :\n\n"
+        f"Nom du produit : {infos['titre']}\n"
+        f"{prix_info}\n"
+        f"Lien : {url[:100]}\n\n"
+        f"*💰 ANALYSE DES PRIX*\n"
+        f"• Prix fournisseur estimé\n"
+        f"• Prix de vente recommandé (x3 minimum)\n"
+        f"• Marge brute et nette estimée\n"
+        f"• Seuil de rentabilité\n\n"
+        f"*📊 POTENTIEL DE MARCHÉ*\n"
+        f"• Taille du marché\n"
+        f"• Niveau de concurrence\n"
+        f"• Saisonnalité\n"
+        f"• Tendance actuelle\n\n"
+        f"*📢 POTENTIEL PUBLICITAIRE*\n"
+        f"• CPA cible\n"
+        f"• ROAS minimum\n"
+        f"• Budget test recommandé\n"
+        f"• TikTok Ads : [score/10]\n"
+        f"• Meta Ads : [score/10]\n\n"
+        f"*⚠️ RISQUES*\n"
+        f"• Top 3 risques\n"
+        f"• Comment les minimiser\n\n"
+        f"*✅ VERDICT*\n"
+        f"• Note : [/10]\n"
+        f"• Recommandation : LANCER / TESTER / ÉVITER\n"
+        f"• Prochaine étape"
+    )
+    return ask_groq(prompt, sys)
     sys = get_system(profile)
     prompt = (
         f"Fais une analyse de vente complète pour ce produit dropshipping :\n\n"
@@ -451,6 +537,7 @@ def cmd_start(message):
         "/tendances — Produits tendance à vendre\n"
         "/tendances [catégorie] — Par catégorie\n"
         "/analyse [produit] | [prix] — Analyse de vente\n"
+        "/lien [url] — Analyse depuis lien AliExpress/Alibaba\n"
         "/fiche [produit] — Fiche produit complète\n"
         "/page [produit] — Page de vente Shopify\n"
         "/flash [produit] — Offre flash complète\n\n"
@@ -701,6 +788,38 @@ def cmd_contenu(message):
     result = plan_contenu(profile, produit)
     if result:
         send_long(message.chat.id, f"📅 PLAN DE CONTENU 30 JOURS\n\n{result}", reply_to=message)
+    else:
+        bot.reply_to(message, "❌ Erreur. Réessaie.")
+
+
+@bot.message_handler(commands=["lien"])
+def cmd_lien(message):
+    if not is_authorized(message.from_user.id):
+        bot.reply_to(message, "⛔ Accès non autorisé."); return
+    profile = get_profile(message.from_user.id)
+    if not profile:
+        bot.reply_to(message, "⚠️ Configure ton profil avec /profil"); return
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip().startswith("http"):
+        bot.reply_to(message,
+            "Usage : /lien [url produit]\n\n"
+            "Ex : /lien https://fr.aliexpress.com/item/...\n"
+            "Ex : /lien https://www.alibaba.com/product-detail/..."); return
+
+    url = parts[1].strip()
+    bot.reply_to(message, "⏳ Analyse du produit en cours...")
+
+    infos = analyser_depuis_lien(profile, url)
+    if not infos:
+        bot.reply_to(message,
+            "❌ Impossible d'analyser ce lien.\n\n"
+            "Essayez : /analyse [nom produit] | [prix]\n"
+            "Ex : /analyse Airpods Pro | 15€"); return
+
+    bot.send_message(message.chat.id, f"✅ Produit détecté : *{infos['titre'][:80]}*", parse_mode="Markdown")
+    result = analyse_depuis_lien_groq(profile, infos, url)
+    if result:
+        send_long(message.chat.id, f"📊 ANALYSE PRODUIT\n\n{result}", reply_to=message)
     else:
         bot.reply_to(message, "❌ Erreur. Réessaie.")
 
