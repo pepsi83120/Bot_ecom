@@ -189,6 +189,8 @@ def generer_fiche_depuis_lien(profile, infos_produit):
         f"• [Risques potentiels, concurrence, saisonnalité]"
     )
     return ask_groq(prompt, sys)
+
+def trouver_tendances(profile, categorie=None):
     sys = get_system(profile)
     prompt = (
         f"Trouve 7 produits à haute tendance pour du dropshipping en ce moment"
