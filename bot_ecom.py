@@ -357,37 +357,45 @@ def plan_contenu(profile, produit=None):
     return ask_groq(prompt, sys)
 
 
-def generer_prompt_image(profile, produit, type_image):
-    """Génère un prompt optimisé pour Pollinations.ai"""
-    sys = get_system(profile)
-    prompt = (
-        f"Génère un prompt en anglais pour créer une image professionnelle e-commerce.\n\n"
-        f"Produit : {produit}\n"
-        f"Type d'image : {type_image}\n\n"
-        f"Le prompt doit être en anglais, très détaillé, style photo professionnelle e-commerce. "
-        f"Inclus : éclairage, fond, angle, style, qualité. "
-        f"Max 200 mots. Réponds UNIQUEMENT avec le prompt, rien d'autre."
-    )
-    return ask_groq(prompt, sys)
-
-def generer_image(produit, type_image, prompt_custom=None):
-    """Génère une image via Pollinations.ai"""
+def generer_5_images(produit, profile):
+    """Génère 5 images marketing via Pollinations.ai"""
     import urllib.parse
 
-    if prompt_custom:
-        prompt = prompt_custom
-    else:
-        prompts = {
-            "produit":   f"professional product photo of {produit}, white background, studio lighting, high quality, e-commerce style, 4k",
-            "lifestyle": f"lifestyle photo of {produit}, beautiful setting, natural light, person using product, high quality photography",
-            "pub":       f"advertising banner for {produit}, modern design, eye-catching, professional, colorful background, text space",
-            "tiktok":    f"viral tiktok style photo of {produit}, trendy aesthetic, young lifestyle, bright colors, social media ready",
-        }
-        prompt = prompts.get(type_image, prompts["produit"])
+    niche = profile.get("niche", "e-commerce")
+    cible = profile.get("cible", "acheteurs en ligne")
 
-    encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&enhance=true"
-    return url
+    prompts = [
+        # Image 1 — Accroche
+        f"professional marketing image for {produit}, bold eye-catching title text overlay, modern premium design, clean white and gold background, social media ready, high quality 4k, minimalist style",
+
+        # Image 2 — Produit en situation
+        f"lifestyle product photo of {produit} in real use situation, person using product, natural light, modern home setting, premium photography, authentic moment, high quality",
+
+        # Image 3 — Bénéfices
+        f"benefits infographic for {produit}, 3 key benefits with icons, clean modern design, blue and white color scheme, professional layout, minimal text, premium style, social media optimized",
+
+        # Image 4 — Avant/Après
+        f"before and after transformation result of {produit}, split screen comparison, left side problem right side solution, clean design, powerful visual impact, professional marketing style",
+
+        # Image 5 — Call to Action
+        f"urgent call to action marketing banner for {produit}, limited offer badge, countdown urgency, bold red and gold colors, buy now button, premium design, high conversion style",
+    ]
+
+    titres = [
+        "1️⃣ Accroche — Capter l'attention",
+        "2️⃣ Produit en situation — Utilisation réelle",
+        "3️⃣ Bénéfices — Points clés",
+        "4️⃣ Résultats — Avant/Après",
+        "5️⃣ Call to Action — Urgence",
+    ]
+
+    urls = []
+    for prompt in prompts:
+        encoded = urllib.parse.quote(prompt)
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&seed={hash(prompt) % 99999}"
+        urls.append(url)
+
+    return urls, titres
 
 def nettoyer(text):
     import re
@@ -738,7 +746,7 @@ def cmd_image(message):
         bot.reply_to(message,
             "🎨 Usage : /image [type] | [produit]\n\n"
             "Types disponibles :\n"
-            "• produit — Photo fond blanc (Shopify)\n"
+            "• produit — 5 images marketing complètes pour ta fiche\n"
             "• lifestyle — Photo d'ambiance\n"
             "• pub — Visuel publicitaire\n"
             "• tiktok — Style TikTok viral\n\n"
@@ -756,39 +764,62 @@ def cmd_image(message):
 
     types_valides = ["produit", "lifestyle", "pub", "tiktok"]
     if type_image not in types_valides:
-        bot.reply_to(message, f"❌ Type invalide. Choisis : produit / lifestyle / pub / tiktok"); return
+        bot.reply_to(message, "❌ Type invalide. Choisis : produit / lifestyle / pub / tiktok"); return
 
+    # Cas spécial : 5 images marketing pour fiche produit
+    if type_image == "produit":
+        bot.reply_to(message, f"🎨 Génération de 5 images marketing pour *{produit}*...\n⏳ 30-60 secondes")
+        urls, titres = generer_5_images(produit, profile)
+        for i, (url, titre) in enumerate(zip(urls, titres)):
+            try:
+                r = requests.get(url, timeout=40)
+                r.raise_for_status()
+                bot.send_photo(
+                    message.chat.id,
+                    r.content,
+                    caption=f"🎨 *{titre}*\n_{produit}_",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                print(f"Erreur image {i+1}: {e}")
+                bot.send_message(message.chat.id, f"⚠️ Image {i+1} — lien direct :\n{url}")
+        bot.send_message(message.chat.id,
+            f"✅ *5 images générées pour {produit}*\n\n"
+            f"💡 Utilisez-les directement sur :\n"
+            f"• Fiche produit Shopify\n"
+            f"• Posts Instagram/TikTok\n"
+            f"• Facebook/Instagram Ads\n"
+            f"• Stories et Reels",
+            parse_mode="Markdown")
+        return
+
+    # Autres types : 1 image
+    import urllib.parse
     bot.reply_to(message, f"🎨 Génération de l'image en cours... (10-20 secondes)")
-
-    # Génère un prompt optimisé via Groq
-    prompt_custom = generer_prompt_image(profile, produit, type_image)
-    url = generer_image(produit, type_image, prompt_custom)
-
+    prompts = {
+        "lifestyle": f"lifestyle photo of {produit}, beautiful setting, natural light, person using product, high quality photography, premium style",
+        "pub":       f"advertising banner for {produit}, modern design, eye-catching, professional, colorful background, text space, high quality",
+        "tiktok":    f"viral tiktok style photo of {produit}, trendy aesthetic, young lifestyle, bright colors, social media ready, gen z style",
+    }
+    encoded = urllib.parse.quote(prompts[type_image])
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true"
     try:
-        # Télécharger et envoyer l'image
-        r = requests.get(url, timeout=30)
+        r = requests.get(url, timeout=40)
         r.raise_for_status()
-        caption = (
-            f"🎨 *{type_image.upper()}* — {produit}\n\n"
-            f"💡 Vous pouvez utiliser cette image pour :\n"
-            + {
-                "produit":   "• Fiche produit Shopify\n• Catalogue\n• Ads statiques",
-                "lifestyle": "• Posts Instagram\n• Stories\n• Ads Meta",
-                "pub":       "• Facebook Ads\n• Instagram Ads\n• Bannières",
-                "tiktok":    "• TikTok Ads\n• Stories\n• Reels",
-            }.get(type_image, "")
-        )
+        labels = {
+            "lifestyle": "Photo d'ambiance",
+            "pub":       "Visuel publicitaire",
+            "tiktok":    "Style TikTok viral",
+        }
         bot.send_photo(
             message.chat.id,
             r.content,
-            caption=caption,
+            caption=f"🎨 *{labels[type_image]}* — {produit}",
             parse_mode="Markdown"
         )
     except Exception as e:
         print(f"Erreur image : {e}")
-        bot.reply_to(message,
-            f"⚠️ Image générée ! Ouvrez ce lien pour la télécharger :\n{url}"
-        )
+        bot.reply_to(message, f"⚠️ Ouvrez ce lien pour télécharger l'image :\n{url}")
 
 
 @bot.message_handler(commands=["adduser"])
