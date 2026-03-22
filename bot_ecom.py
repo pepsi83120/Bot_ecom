@@ -2,6 +2,7 @@ import telebot
 import requests
 import json
 import os
+import urllib.parse
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -359,7 +360,6 @@ def plan_contenu(profile, produit=None):
 
 def generer_5_images(produit, profile):
     """Génère 5 images marketing via Pollinations.ai"""
-    import urllib.parse
 
     niche = profile.get("niche", "e-commerce")
     cible = profile.get("cible", "acheteurs en ligne")
@@ -768,31 +768,28 @@ def cmd_image(message):
 
     # Cas spécial : 5 images marketing pour fiche produit
     if type_image == "produit":
-        bot.reply_to(message, f"🎨 Génération de 5 images marketing pour *{produit}*...\n⏳ Patience, 1-2 minutes au total", parse_mode="Markdown")
+        bot.reply_to(message, f"🎨 Génération de 5 images pour *{produit}*...\n⏳ Patience, environ 2-3 minutes", parse_mode="Markdown")
         urls, titres = generer_5_images(produit, profile)
         for i, (url, titre) in enumerate(zip(urls, titres)):
             try:
+                bot.send_message(message.chat.id, f"⏳ Image {i+1}/5 en cours...")
+                r = requests.get(url, timeout=120)
+                r.raise_for_status()
                 bot.send_photo(
                     message.chat.id,
-                    url,
+                    r.content,
                     caption=f"🎨 *{titre}*\n_{produit}_",
                     parse_mode="Markdown"
                 )
             except Exception as e:
                 print(f"Erreur image {i+1}: {e}")
-                bot.send_message(message.chat.id, f"⚠️ Image {i+1} — téléchargez ici :\n{url}")
+                bot.send_message(message.chat.id, f"❌ Image {i+1} échouée — réessayez plus tard")
         bot.send_message(message.chat.id,
-            f"✅ *5 images générées pour {produit}*\n\n"
-            f"💡 Utilisez-les sur :\n"
-            f"• Fiche produit Shopify\n"
-            f"• Posts Instagram/TikTok\n"
-            f"• Facebook/Instagram Ads",
-            parse_mode="Markdown")
+            f"✅ Terminé ! Images prêtes pour :\n• Fiche Shopify\n• Ads Meta/TikTok\n• Posts réseaux sociaux")
         return
 
     # Autres types : 1 image
-    import urllib.parse
-    bot.reply_to(message, f"🎨 Génération en cours... (20-40 secondes)")
+    bot.reply_to(message, f"🎨 Génération en cours... (30-60 secondes)")
     prompts = {
         "lifestyle": f"lifestyle photo of {produit}, beautiful setting, natural light, person using product, high quality photography, premium style",
         "pub":       f"advertising banner for {produit}, modern design, eye-catching, professional, colorful background, text space, high quality",
@@ -800,21 +797,19 @@ def cmd_image(message):
     }
     encoded = urllib.parse.quote(prompts[type_image])
     url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true"
-    labels = {
-        "lifestyle": "Photo d'ambiance",
-        "pub":       "Visuel publicitaire",
-        "tiktok":    "Style TikTok viral",
-    }
+    labels = {"lifestyle": "Photo d'ambiance", "pub": "Visuel publicitaire", "tiktok": "Style TikTok viral"}
     try:
+        r = requests.get(url, timeout=120)
+        r.raise_for_status()
         bot.send_photo(
             message.chat.id,
-            url,
+            r.content,
             caption=f"🎨 *{labels[type_image]}* — {produit}",
             parse_mode="Markdown"
         )
     except Exception as e:
         print(f"Erreur image : {e}")
-        bot.reply_to(message, f"⚠️ Téléchargez l'image ici :\n{url}")
+        bot.reply_to(message, f"❌ Génération échouée. Réessayez dans quelques secondes.")
 
 
 @bot.message_handler(commands=["adduser"])
