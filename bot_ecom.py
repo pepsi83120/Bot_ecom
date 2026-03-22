@@ -123,70 +123,37 @@ def nettoyer(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-def scraper_produit(url):
-    """Récupère les infos du produit depuis le lien"""
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-        }
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-
-        # Extraire le titre depuis la balise <title>
-        import re
-        title_match = re.search(r'<title[^>]*>(.*?)</title>', r.text, re.IGNORECASE | re.DOTALL)
-        title = title_match.group(1).strip() if title_match else "Produit"
-
-        # Extraire les méta descriptions
-        desc_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']', r.text, re.IGNORECASE)
-        description = desc_match.group(1).strip() if desc_match else ""
-
-        # Extraire le prix si disponible
-        price_match = re.search(r'"price"[:\s]+"?([\d.,]+)"?', r.text)
-        price = price_match.group(1) if price_match else "Non trouvé"
-
-        return {
-            "titre": title[:200],
-            "description": description[:500],
-            "prix_fournisseur": price,
-            "url": url
-        }
-    except Exception as e:
-        print(f"Erreur scraping : {e}")
-        return None
-
-def generer_fiche_depuis_lien(profile, infos_produit):
+def analyser_vente(profile, produit, prix_achat):
     sys = get_system(profile)
     prompt = (
-        f"Génère une fiche produit Shopify complète basée sur ces infos fournisseur :\n\n"
-        f"Titre fournisseur : {infos_produit['titre']}\n"
-        f"Description fournisseur : {infos_produit['description']}\n"
-        f"Prix fournisseur : {infos_produit['prix_fournisseur']}\n"
-        f"Source : {infos_produit['url']}\n\n"
-        f"Génère une fiche produit optimisée pour Shopify :\n\n"
-        f"*📦 NOM DU PRODUIT*\n"
-        f"[Titre accrocheur et optimisé SEO]\n\n"
-        f"*💰 STRATÉGIE PRIX*\n"
-        f"• Prix fournisseur : [prix]\n"
-        f"• Prix de vente recommandé : [prix]\n"
-        f"• Marge estimée : [%]\n\n"
-        f"*✍️ DESCRIPTION COURTE*\n"
-        f"[2-3 phrases percutantes pour la page produit]\n\n"
-        f"*📝 DESCRIPTION LONGUE*\n"
-        f"[Description complète avec hook, bénéfices et CTA]\n\n"
-        f"*⭐ BULLET POINTS*\n"
-        f"• [5 arguments de vente courts]\n\n"
-        f"*🔍 META DESCRIPTION SEO*\n"
-        f"[155 caractères max]\n\n"
-        f"*🏷️ TAGS SHOPIFY*\n"
-        f"[10 tags pertinents]\n\n"
-        f"*📢 ANGLE PUBLICITAIRE*\n"
-        f"• Hook TikTok : [accroche vidéo]\n"
-        f"• Accroche Meta : [texte pub]\n"
-        f"• Cible recommandée : [audience]\n\n"
-        f"*⚠️ POINTS D'ATTENTION*\n"
-        f"• [Risques potentiels, concurrence, saisonnalité]"
+        f"Fais une analyse de vente complète pour ce produit dropshipping :\n\n"
+        f"Produit : {produit}\n"
+        f"Prix d'achat fournisseur : {prix_achat}\n\n"
+        f"*💰 ANALYSE DES PRIX*\n"
+        f"• Prix d'achat : {prix_achat}\n"
+        f"• Prix de vente recommandé : [calcul x3 minimum]\n"
+        f"• Marge brute : [montant et %]\n"
+        f"• Marge nette estimée (après ads) : [montant et %]\n"
+        f"• Seuil de rentabilité : [nb de ventes/jour pour être rentable]\n\n"
+        f"*📊 POTENTIEL DE MARCHÉ*\n"
+        f"• Taille du marché estimée\n"
+        f"• Niveau de concurrence : [faible/moyen/fort]\n"
+        f"• Saisonnalité : [tout l'année / saisonnier]\n"
+        f"• Tendance actuelle : [montante/stable/baissante]\n\n"
+        f"*📢 POTENTIEL PUBLICITAIRE*\n"
+        f"• CPA cible recommandé (coût par achat)\n"
+        f"• ROAS minimum pour être rentable\n"
+        f"• Budget test recommandé\n"
+        f"• Potentiel TikTok Ads : [score/10 + pourquoi]\n"
+        f"• Potentiel Meta Ads : [score/10 + pourquoi]\n\n"
+        f"*⚠️ RISQUES*\n"
+        f"• Top 3 risques à anticiper\n"
+        f"• Comment les minimiser\n\n"
+        f"*✅ VERDICT FINAL*\n"
+        f"• Note globale : [/10]\n"
+        f"• Recommandation : [LANCER / TESTER PRUDEMMENT / ÉVITER]\n"
+        f"• Raison principale\n"
+        f"• Prochaine étape concrète à faire"
     )
     return ask_groq(prompt, sys)
 
@@ -449,7 +416,7 @@ def cmd_start(message):
         "🔥 PRODUITS\n"
         "/tendances — Produits tendance à vendre\n"
         "/tendances [catégorie] — Par catégorie\n"
-        "/analyse [lien] — Fiche depuis lien AliExpress/Alibaba\n"
+        "/analyse [produit] | [prix] — Analyse de vente\n"
         "/fiche [produit] — Fiche produit complète\n"
         "/page [produit] — Page de vente Shopify\n"
         "/flash [produit] — Offre flash complète\n\n"
@@ -708,31 +675,25 @@ def cmd_analyse(message):
     if not profile:
         bot.reply_to(message, "⚠️ Configure ton profil avec /profil"); return
     parts = message.text.split(" ", 1)
-    if len(parts) < 2:
+    if len(parts) < 2 or "|" not in parts[1]:
         bot.reply_to(message,
-            "Usage : /analyse [lien produit]\n\n"
-            "Ex : /analyse https://fr.aliexpress.com/item/...\n"
-            "Ex : /analyse https://www.alibaba.com/product-detail/..."); return
+            "Usage : /analyse [produit] | [prix achat]\n\n"
+            "Ex : /analyse Ceinture massage électrique | 8€\n"
+            "Ex : /analyse Écouteurs sans fil | 12.50€"); return
 
-    url = parts[1].strip()
-    if not url.startswith("http"):
-        bot.reply_to(message, "❌ Lien invalide. Commence par https://"); return
+    infos = parts[1].split("|", 1)
+    produit    = infos[0].strip()
+    prix_achat = infos[1].strip()
 
-    bot.reply_to(message, "⏳ Récupération du produit en cours...")
-    infos = scraper_produit(url)
-
-    if not infos or not infos.get("titre"):
-        bot.reply_to(message,
-            "❌ Impossible de récupérer les infos du produit.\n\n"
-            "AliExpress bloque parfois les robots. Essayez :\n"
-            "• Copier le nom du produit et utiliser /fiche [nom produit]"); return
-
-    bot.send_message(message.chat.id, f"✅ Produit trouvé : {infos['titre'][:100]}\n\n⏳ Génération de la fiche...")
-    result = generer_fiche_depuis_lien(profile, infos)
+    bot.reply_to(message, f"⏳ Analyse de vente en cours pour *{produit}*...")
+    result = analyser_vente(profile, produit, prix_achat)
     if result:
-        send_long(message.chat.id, f"📦 FICHE PRODUIT SHOPIFY\n\n{result}", reply_to=message)
+        send_long(message.chat.id, f"📊 ANALYSE DE VENTE\n\n{result}", reply_to=message)
     else:
         bot.reply_to(message, "❌ Erreur. Réessaie.")
+
+
+@bot.message_handler(commands=["adduser"])
 def cmd_adduser(message):
     if not is_admin(message.from_user.id):
         bot.reply_to(message, "⛔ Admin seulement."); return
