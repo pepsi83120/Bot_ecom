@@ -357,9 +357,37 @@ def plan_contenu(profile, produit=None):
     return ask_groq(prompt, sys)
 
 
-# ============================================================
-#  UTILITAIRES
-# ============================================================
+def generer_prompt_image(profile, produit, type_image):
+    """Génère un prompt optimisé pour Pollinations.ai"""
+    sys = get_system(profile)
+    prompt = (
+        f"Génère un prompt en anglais pour créer une image professionnelle e-commerce.\n\n"
+        f"Produit : {produit}\n"
+        f"Type d'image : {type_image}\n\n"
+        f"Le prompt doit être en anglais, très détaillé, style photo professionnelle e-commerce. "
+        f"Inclus : éclairage, fond, angle, style, qualité. "
+        f"Max 200 mots. Réponds UNIQUEMENT avec le prompt, rien d'autre."
+    )
+    return ask_groq(prompt, sys)
+
+def generer_image(produit, type_image, prompt_custom=None):
+    """Génère une image via Pollinations.ai"""
+    import urllib.parse
+
+    if prompt_custom:
+        prompt = prompt_custom
+    else:
+        prompts = {
+            "produit":   f"professional product photo of {produit}, white background, studio lighting, high quality, e-commerce style, 4k",
+            "lifestyle": f"lifestyle photo of {produit}, beautiful setting, natural light, person using product, high quality photography",
+            "pub":       f"advertising banner for {produit}, modern design, eye-catching, professional, colorful background, text space",
+            "tiktok":    f"viral tiktok style photo of {produit}, trendy aesthetic, young lifestyle, bright colors, social media ready",
+        }
+        prompt = prompts.get(type_image, prompts["produit"])
+
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&enhance=true"
+    return url
 
 def nettoyer(text):
     import re
@@ -421,7 +449,11 @@ def cmd_start(message):
         "/page [produit] — Page de vente Shopify\n"
         "/flash [produit] — Offre flash complète\n\n"
         "━━━━━━━━━━━━━━━━\n"
-        "📢 PUBLICITÉ\n"
+        "🎨 IMAGES IA\n"
+        "/image produit | [nom] — Photo fond blanc\n"
+        "/image lifestyle | [nom] — Photo d'ambiance\n"
+        "/image pub | [nom] — Visuel publicitaire\n"
+        "/image tiktok | [nom] — Style TikTok\n\n"
         "/ads [produit] — Textes TikTok + Meta Ads\n\n"
         "━━━━━━━━━━━━━━━━\n"
         "📊 STRATÉGIE\n"
@@ -691,6 +723,72 @@ def cmd_analyse(message):
         send_long(message.chat.id, f"📊 ANALYSE DE VENTE\n\n{result}", reply_to=message)
     else:
         bot.reply_to(message, "❌ Erreur. Réessaie.")
+
+
+@bot.message_handler(commands=["image"])
+def cmd_image(message):
+    if not is_authorized(message.from_user.id):
+        bot.reply_to(message, "⛔ Accès non autorisé."); return
+    profile = get_profile(message.from_user.id)
+    if not profile:
+        bot.reply_to(message, "⚠️ Configure ton profil avec /profil"); return
+
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2:
+        bot.reply_to(message,
+            "🎨 Usage : /image [type] | [produit]\n\n"
+            "Types disponibles :\n"
+            "• produit — Photo fond blanc (Shopify)\n"
+            "• lifestyle — Photo d'ambiance\n"
+            "• pub — Visuel publicitaire\n"
+            "• tiktok — Style TikTok viral\n\n"
+            "Ex : /image produit | Ceinture massage électrique\n"
+            "Ex : /image lifestyle | Écouteurs sans fil\n"
+            "Ex : /image pub | Montre connectée\n"
+            "Ex : /image tiktok | Lampe LED gaming"); return
+
+    if "|" not in parts[1]:
+        bot.reply_to(message, "❌ Format incorrect.\nEx : /image produit | Nom du produit"); return
+
+    infos      = parts[1].split("|", 1)
+    type_image = infos[0].strip().lower()
+    produit    = infos[1].strip()
+
+    types_valides = ["produit", "lifestyle", "pub", "tiktok"]
+    if type_image not in types_valides:
+        bot.reply_to(message, f"❌ Type invalide. Choisis : produit / lifestyle / pub / tiktok"); return
+
+    bot.reply_to(message, f"🎨 Génération de l'image en cours... (10-20 secondes)")
+
+    # Génère un prompt optimisé via Groq
+    prompt_custom = generer_prompt_image(profile, produit, type_image)
+    url = generer_image(produit, type_image, prompt_custom)
+
+    try:
+        # Télécharger et envoyer l'image
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        caption = (
+            f"🎨 *{type_image.upper()}* — {produit}\n\n"
+            f"💡 Vous pouvez utiliser cette image pour :\n"
+            + {
+                "produit":   "• Fiche produit Shopify\n• Catalogue\n• Ads statiques",
+                "lifestyle": "• Posts Instagram\n• Stories\n• Ads Meta",
+                "pub":       "• Facebook Ads\n• Instagram Ads\n• Bannières",
+                "tiktok":    "• TikTok Ads\n• Stories\n• Reels",
+            }.get(type_image, "")
+        )
+        bot.send_photo(
+            message.chat.id,
+            r.content,
+            caption=caption,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        print(f"Erreur image : {e}")
+        bot.reply_to(message,
+            f"⚠️ Image générée ! Ouvrez ce lien pour la télécharger :\n{url}"
+        )
 
 
 @bot.message_handler(commands=["adduser"])
