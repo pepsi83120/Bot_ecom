@@ -9,11 +9,11 @@ Détecte les nouvelles lignes → active l'accès automatiquement
 import os
 import json
 import time
-import threading
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import gspread
+from google.oauth2.service_account import Credentials
 
 load_dotenv()
 
@@ -25,7 +25,7 @@ USERS_FILE = "users_db.json"
 SUBSCRIPTION_DAYS = 30
 
 # ============================================================
-#  HELPERS DB (même structure que webhook_server.py)
+#  HELPERS DB
 # ============================================================
 
 def load_db():
@@ -39,7 +39,7 @@ def _save_db(db):
         json.dump(db, f, indent=2, ensure_ascii=False)
 
 def add_user(telegram_username: str, email: str, produit: str):
-    db = load_db()
+    db     = load_db()
     today  = datetime.now().strftime("%Y-%m-%d")
     expiry = (datetime.now() + timedelta(days=SUBSCRIPTION_DAYS)).strftime("%Y-%m-%d")
 
@@ -71,20 +71,39 @@ def tg_send(token: str, chat_id, text: str):
         print(f"[TG] Erreur envoi {chat_id}: {e}")
 
 # ============================================================
-#  GOOGLE SHEET POLLER
+#  GOOGLE SHEET
 # ============================================================
 
 def get_sheet():
-    gc = gspread.service_account(filename="credentials.json")
+    scopes = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+    if creds_json:
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    else:
+        creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+
+    gc = gspread.authorize(creds)
     return gc.open_by_key(SHEET_ID).sheet1
 
-def process_new_rows():
-    sheet = get_sheet()
-    rows  = sheet.get_all_records()
+# ============================================================
+#  TRAITEMENT NOUVELLES LIGNES
+# ============================================================
 
-    # Trouve la colonne "Traité"
+def process_new_rows():
+    sheet   = get_sheet()
+    rows    = sheet.get_all_records()
     headers = sheet.row_values(1)
-    col_traite = headers.index("Traité") + 1  # gspread = base 1
+
+    if "Traité" not in headers:
+        print("[POLLER] ⚠️ Colonne 'Traité' introuvable dans le Sheet !")
+        return
+
+    col_traite = headers.index("Traité") + 1  # base 1
 
     for i, row in enumerate(rows):
         traite = str(row.get("Traité", "")).strip().lower()
@@ -98,13 +117,13 @@ def process_new_rows():
         if not email or not telegram:
             continue
 
-        # Marquer comme traité AVANT d'envoyer (évite les doublons)
-        sheet.update_cell(i + 2, col_traite, "oui")  # +2 : header + index 0
+        # Marquer traité en premier (évite les doublons si crash)
+        sheet.update_cell(i + 2, col_traite, "oui")
 
         # Ajouter dans la DB
         expiry = add_user(telegram, email, produit)
 
-        # Message au client
+        # Message client
         tg_send(BOT_TOKEN, f"@{telegram}",
             f"✅ *Accès activé — {produit} !*\n\n"
             f"Bienvenue ! Ton abonnement est actif.\n"
@@ -121,10 +140,10 @@ def process_new_rows():
             f"• 📅 Expire le {expiry}"
         )
 
-        print(f"[POLLER] Accès activé : @{telegram} ({produit})")
+        print(f"[POLLER] ✅ Accès activé : @{telegram} ({produit})")
 
 # ============================================================
-#  SCHEDULER EXPIRATIONS (même logique que webhook_server.py)
+#  VÉRIFICATION EXPIRATIONS (1x par jour)
 # ============================================================
 
 def check_expirations():
@@ -133,8 +152,8 @@ def check_expirations():
     subs  = {uid: s for uid, s in db["subscriptions"].items() if s.get("active")}
 
     for uid, sub in subs.items():
-        telegram = sub.get("telegram_username", uid)
-        expiry   = datetime.strptime(sub["expiry_date"], "%Y-%m-%d").date()
+        telegram  = sub.get("telegram_username", uid)
+        expiry    = datetime.strptime(sub["expiry_date"], "%Y-%m-%d").date()
         days_left = (expiry - today).days
 
         if days_left == 3 and not sub.get("notified_3d"):
@@ -159,10 +178,11 @@ def check_expirations():
                 f"🔄 Pour retrouver l'accès 👉 [ton lien Beacons]"
             )
             tg_send(ADMIN_BOT, ADMIN_ID,
-                f"🔴 *Accès expiré*\n• @{telegram}\n• {sub.get('produit','')}"
+                f"🔴 *Accès expiré*\n• @{telegram}\n• {sub.get('produit', '')}"
             )
 
     _save_db(db)
+    print(f"[POLLER] Expirations vérifiées — {len(subs)} abonnements actifs")
 
 # ============================================================
 #  BOUCLE PRINCIPALE
@@ -177,13 +197,15 @@ def run_poller():
         except Exception as e:
             print(f"[POLLER] Erreur process_new_rows: {e}")
 
-        # Vérifier les expirations 1x par jour (toutes les 720 boucles de 2min)
         cycle += 1
-        if cycle >= 720:
+        if cycle >= 720:  # 720 x 2min = 24h
             try:
                 check_expirations()
             except Exception as e:
                 print(f"[POLLER] Erreur check_expirations: {e}")
             cycle = 0
 
-        time.sleep(120)  # 2 minutes
+        time.sleep(120)
+
+if __name__ == "__main__":
+    run_poller()
