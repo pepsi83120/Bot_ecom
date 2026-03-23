@@ -82,9 +82,12 @@ def get_sheet():
 
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
     if creds_json:
+        print(f"[DEBUG] GOOGLE_CREDENTIALS trouvé, longueur: {len(creds_json)}")
         creds_dict = json.loads(creds_json)
+        print(f"[DEBUG] private_key_id utilisé: {creds_dict.get('private_key_id', 'INTROUVABLE')}")
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     else:
+        print("[DEBUG] GOOGLE_CREDENTIALS absent, utilise credentials.json")
         creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
 
     gc = gspread.authorize(creds)
@@ -103,7 +106,7 @@ def process_new_rows():
         print("[POLLER] ⚠️ Colonne 'Traité' introuvable dans le Sheet !")
         return
 
-    col_traite = headers.index("Traité") + 1  # base 1
+    col_traite = headers.index("Traité") + 1
 
     for i, row in enumerate(rows):
         traite = str(row.get("Traité", "")).strip().lower()
@@ -117,13 +120,9 @@ def process_new_rows():
         if not email or not telegram:
             continue
 
-        # Marquer traité en premier (évite les doublons si crash)
         sheet.update_cell(i + 2, col_traite, "oui")
-
-        # Ajouter dans la DB
         expiry = add_user(telegram, email, produit)
 
-        # Message client
         tg_send(BOT_TOKEN, f"@{telegram}",
             f"✅ *Accès activé — {produit} !*\n\n"
             f"Bienvenue ! Ton abonnement est actif.\n"
@@ -131,7 +130,6 @@ def process_new_rows():
             f"Envoie /start pour commencer 🚀"
         )
 
-        # Notif admin
         tg_send(ADMIN_BOT, ADMIN_ID,
             f"🎉 *Nouvel accès activé*\n\n"
             f"• @{telegram}\n"
@@ -198,7 +196,7 @@ def run_poller():
             print(f"[POLLER] Erreur process_new_rows: {e}")
 
         cycle += 1
-        if cycle >= 720:  # 720 x 2min = 24h
+        if cycle >= 720:
             try:
                 check_expirations()
             except Exception as e:
