@@ -1,31 +1,23 @@
 """
-main.py
--------
-Point d'entrée unique pour Railway.
-Lance en parallèle :
-  - webhook_server (Flask + scheduler)
-  - admin_bot (polling Telegram)
-  - ecom_bot (polling Telegram) — optionnel si tu veux tout en 1 process
+main.py — Point d'entrée Railway
+Lance le poller Google Sheet + admin bot + ecom bot en parallèle
 """
 
 import threading
-import os
 
-def run_webhook():
-    from webhook_server import app, check_expirations
-    port = int(os.environ.get("PORT", 5000))
-    check_expirations()
-    app.run(host="0.0.0.0", port=port)
+def run_poller():
+    from sheet_poller import run_poller as _run
+    _run()
 
 def run_admin_bot():
-    import admin_bot  # noqa — démarre le polling via le module
+    import admin_bot  # noqa
 
 def run_ecom_bot():
-    import bot_ecom_fixed  # noqa — démarre le polling via le module
+    import bot_ecom  # noqa — adapte le nom si différent
 
 if __name__ == "__main__":
     threads = [
-        threading.Thread(target=run_webhook,   daemon=False, name="webhook"),
+        threading.Thread(target=run_poller,    daemon=False, name="sheet_poller"),
         threading.Thread(target=run_admin_bot, daemon=False, name="admin_bot"),
         threading.Thread(target=run_ecom_bot,  daemon=False, name="ecom_bot"),
     ]
@@ -34,3 +26,5 @@ if __name__ == "__main__":
         t.start()
     for t in threads:
         t.join()
+
+
