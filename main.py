@@ -13,7 +13,7 @@ def run_admin_bot():
     import admin_bot  # noqa
 
 def run_ecom_bot():
-    import bot_ecom  # noqa — adapte le nom si différent
+    import bot_ecom_fixed # noqa — adapte le nom si différent
 
 if __name__ == "__main__":
     threads = [
