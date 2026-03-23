@@ -543,10 +543,12 @@ def cmd_start(message):
         "/flash [produit] — Offre flash complète\n\n"
         "━━━━━━━━━━━━━━━━\n"
         "🎨 IMAGES IA\n"
-        "/image produit | [nom] — Photo fond blanc\n"
+        "/image produit | [nom] — 5 images marketing\n"
         "/image lifestyle | [nom] — Photo d'ambiance\n"
         "/image pub | [nom] — Visuel publicitaire\n"
-        "/image tiktok | [nom] — Style TikTok\n\n"
+        "/image tiktok | [nom] — Style TikTok\n"
+        "/imagelien [url] — 5 images brandées depuis lien\n"
+        "/imagebrande [nom] — 5 images brandées depuis nom\n\n"
         "/ads [produit] — Textes TikTok + Meta Ads\n\n"
         "━━━━━━━━━━━━━━━━\n"
         "📊 STRATÉGIE\n"
@@ -581,11 +583,23 @@ def cmd_profil(message):
         "Ex : /setpays France\n\n"
         "/setbudget [budget ads/mois]\n"
         "Ex : /setbudget 500€/mois\n\n"
-        + profil_actuel
+        "/setmarque [nom de ta marque]\n"
+        "Ex : /setmarque LuxStyle\n\n"
+        + profil_actuel +
+        f"\n• Marque : {profile.get('marque','Non défini') if profile else 'Non défini'}"
     )
 
 
-@bot.message_handler(commands=["setniche"])
+@bot.message_handler(commands=["setmarque"])
+def cmd_setmarque(message):
+    if not is_authorized(message.from_user.id): return
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2:
+        bot.reply_to(message, "Usage : /setmarque [nom de ta marque]\nEx : /setmarque LuxStyle"); return
+    profile = get_profile(message.from_user.id)
+    profile["marque"] = parts[1]
+    save_profile(message.from_user.id, profile)
+    bot.reply_to(message, f"✅ Marque enregistrée : {parts[1]}")
 def cmd_setniche(message):
     if not is_authorized(message.from_user.id): return
     parts = message.text.split(" ", 1)
@@ -925,7 +939,140 @@ def cmd_image(message):
         bot.reply_to(message, "❌ Génération échouée. Réessayez dans 1 minute.")
 
 
-@bot.message_handler(commands=["adduser"])
+def generer_5_images_marque(produit, marque, profile):
+    """Génère 5 images brandées à partir du nom produit"""
+    prod  = produit[:60]
+    brand = marque[:30]
+    niche = profile.get("niche", "e-commerce")
+
+    prompts = [
+        f"premium product photo {prod}, brand {brand}, white background, professional studio lighting, luxury e-commerce, minimalist, brand logo space",
+        f"lifestyle photo {prod}, {brand} brand, person using product, modern interior, natural light, premium feel, aspirational",
+        f"product benefits visual {prod} by {brand}, clean icons, white blue design, professional infographic, brand colors",
+        f"before after {prod} {brand}, split screen transformation, powerful result, professional marketing visual",
+        f"sale banner {prod} {brand} brand, exclusive offer, premium design, bold colors, shop now button, luxury feel",
+    ]
+
+    titres = [
+        "1️⃣ Photo produit brandée",
+        "2️⃣ Lifestyle avec ta marque",
+        "3️⃣ Bénéfices brandés",
+        "4️⃣ Avant / Après",
+        "5️⃣ Call to Action brandé",
+    ]
+    return prompts, titres
+
+
+@bot.message_handler(commands=["imagelien"])
+def cmd_imagelien(message):
+    if not is_authorized(message.from_user.id):
+        bot.reply_to(message, "⛔ Accès non autorisé."); return
+    profile = get_profile(message.from_user.id)
+    if not profile:
+        bot.reply_to(message, "⚠️ Configure ton profil avec /profil"); return
+
+    marque = profile.get("marque")
+    if not marque:
+        bot.reply_to(message,
+            "⚠️ Tu n'as pas encore défini ta marque !\n\n"
+            "Fais d'abord : /setmarque [nom de ta marque]\n"
+            "Ex : /setmarque LuxStyle"); return
+
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip().startswith("http"):
+        bot.reply_to(message,
+            "Usage : /imagelien [url produit]\n\n"
+            "Ex : /imagelien https://fr.aliexpress.com/item/...\n\n"
+            "Le bot va analyser le produit et créer 5 images\n"
+            f"brandées à ton nom : *{marque}*", parse_mode="Markdown"); return
+
+    url = parts[1].strip()
+    bot.reply_to(message, f"🔍 Analyse du produit en cours...")
+
+    # Récupérer le nom du produit depuis le lien
+    infos = analyser_depuis_lien(profile, url)
+    if not infos:
+        bot.reply_to(message,
+            "❌ Impossible d'extraire le produit depuis ce lien.\n\n"
+            "Utilise plutôt : /imagebrande [nom produit]\n"
+            "Ex : /imagebrande Airpods Pro"); return
+
+    produit = infos["titre"]
+    bot.send_message(message.chat.id,
+        f"✅ Produit détecté : *{produit[:80]}*\n\n"
+        f"🎨 Génération de 5 images brandées *{marque}*...\n"
+        f"⏳ Environ 2-3 minutes",
+        parse_mode="Markdown")
+
+    prompts, titres = generer_5_images_marque(produit, marque, profile)
+    for i, (prompt, titre) in enumerate(zip(prompts, titres)):
+        try:
+            bot.send_message(message.chat.id, f"⏳ Image {i+1}/5...")
+            image_bytes = generer_image_hf(prompt)
+            if image_bytes:
+                bot.send_photo(
+                    message.chat.id,
+                    image_bytes,
+                    caption=f"🎨 *{titre}*\n🏷️ {marque} — {produit[:50]}",
+                    parse_mode="Markdown"
+                )
+            else:
+                bot.send_message(message.chat.id, f"❌ Image {i+1} échouée")
+        except Exception as e:
+            print(f"Erreur image {i+1}: {e}")
+    bot.send_message(message.chat.id,
+        f"✅ 5 images *{marque}* générées !\n\n"
+        f"Prêtes pour :\n• Fiche Shopify\n• Facebook/Instagram Ads\n• TikTok Ads",
+        parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["imagebrande"])
+def cmd_imagebrande(message):
+    """Version sans lien — juste le nom du produit"""
+    if not is_authorized(message.from_user.id):
+        bot.reply_to(message, "⛔ Accès non autorisé."); return
+    profile = get_profile(message.from_user.id)
+    if not profile:
+        bot.reply_to(message, "⚠️ Configure ton profil avec /profil"); return
+
+    marque = profile.get("marque")
+    if not marque:
+        bot.reply_to(message,
+            "⚠️ Définis d'abord ta marque : /setmarque [nom]\n"
+            "Ex : /setmarque LuxStyle"); return
+
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2:
+        bot.reply_to(message,
+            f"Usage : /imagebrande [nom produit]\n\n"
+            f"Ex : /imagebrande Écouteurs sans fil\n\n"
+            f"Marque actuelle : *{marque}*", parse_mode="Markdown"); return
+
+    produit = parts[1].strip()
+    bot.reply_to(message,
+        f"🎨 Génération de 5 images brandées *{marque}* pour *{produit}*...\n⏳ 2-3 minutes",
+        parse_mode="Markdown")
+
+    prompts, titres = generer_5_images_marque(produit, marque, profile)
+    for i, (prompt, titre) in enumerate(zip(prompts, titres)):
+        try:
+            bot.send_message(message.chat.id, f"⏳ Image {i+1}/5...")
+            image_bytes = generer_image_hf(prompt)
+            if image_bytes:
+                bot.send_photo(
+                    message.chat.id,
+                    image_bytes,
+                    caption=f"🎨 *{titre}*\n🏷️ {marque} — {produit[:50]}",
+                    parse_mode="Markdown"
+                )
+            else:
+                bot.send_message(message.chat.id, f"❌ Image {i+1} échouée")
+        except Exception as e:
+            print(f"Erreur image {i+1}: {e}")
+    bot.send_message(message.chat.id,
+        f"✅ 5 images *{marque}* générées !\n\n"
+        f"Prêtes pour Shopify, Ads et réseaux sociaux 🚀",
+        parse_mode="Markdown")
 def cmd_adduser(message):
     if not is_admin(message.from_user.id):
         bot.reply_to(message, "⛔ Admin seulement."); return
