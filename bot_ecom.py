@@ -2,7 +2,6 @@ import telebot
 import requests
 import json
 import os
-import re
 import urllib.parse
 from datetime import datetime
 from dotenv import load_dotenv
@@ -111,11 +110,8 @@ def get_system(profile):
         f"- Toujours en français, ultra concret et chiffré."
     )
 
-# ============================================================
-#  NETTOYAGE — une seule définition
-# ============================================================
-
 def nettoyer(text):
+    import re
     # Supprimer les séparateurs ===== et -----
     text = re.sub(r'={3,}', '', text)
     text = re.sub(r'-{3,}', '', text)
@@ -129,15 +125,14 @@ def nettoyer(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-
-# ============================================================
-#  FONCTIONS MÉTIER
-# ============================================================
-
 def analyser_depuis_lien(profile, url):
     """Extrait les infos produit depuis l'URL et fait une analyse"""
+    import re
+
+    # Extraire des infos depuis l'URL elle-même
     source = "AliExpress" if "aliexpress" in url else "Alibaba" if "alibaba" in url else "CJ" if "cjdropshipping" in url else "Fournisseur"
 
+    # Tenter de récupérer la page
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
@@ -147,11 +142,13 @@ def analyser_depuis_lien(profile, url):
         r = requests.get(url, headers=headers, timeout=20)
         content = r.text
 
+        # Extraire le titre
         title_match = re.search(r'<title[^>]*>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
         title = title_match.group(1).strip() if title_match else ""
         title = re.sub(r'\s*[-|]\s*AliExpress.*$', '', title, flags=re.IGNORECASE).strip()
         title = re.sub(r'\s*[-|]\s*Alibaba.*$', '', title, flags=re.IGNORECASE).strip()
 
+        # Extraire le prix
         price_patterns = [
             r'"price"[:\s]+"?([\d.,]+)"?',
             r'"salePrice"[:\s]+"?([\d.,]+)"?',
@@ -172,6 +169,7 @@ def analyser_depuis_lien(profile, url):
     except Exception as e:
         print(f"Erreur scraping lien: {e}")
 
+    # Si scraping échoue, extraire depuis l'URL
     url_clean = url.split("?")[0].split("/")[-1]
     url_clean = re.sub(r'[-_]', ' ', url_clean)
     url_clean = re.sub(r'\d+', '', url_clean).strip()
@@ -180,7 +178,6 @@ def analyser_depuis_lien(profile, url):
         return {"titre": url_clean[:100], "prix": None, "source": source}
 
     return None
-
 
 def analyse_depuis_lien_groq(profile, infos, url):
     sys = get_system(profile)
@@ -215,10 +212,6 @@ def analyse_depuis_lien_groq(profile, infos, url):
         f"• Prochaine étape"
     )
     return ask_groq(prompt, sys)
-
-
-# FIX : fonction analyser_vente manquante, ajoutée ici
-def analyser_vente(profile, produit, prix_achat):
     sys = get_system(profile)
     prompt = (
         f"Fais une analyse de vente complète pour ce produit dropshipping :\n\n"
@@ -251,7 +244,6 @@ def analyser_vente(profile, produit, prix_achat):
         f"• Prochaine étape concrète à faire"
     )
     return ask_groq(prompt, sys)
-
 
 def trouver_tendances(profile, categorie=None):
     sys = get_system(profile)
@@ -489,26 +481,13 @@ def generer_5_images(produit, profile):
     ]
     return prompts, titres
 
-def generer_5_images_marque(produit, marque, profile):
-    """Génère 5 images brandées à partir du nom produit"""
-    prod  = produit[:60]
-    brand = marque[:30]
-    prompts = [
-        f"premium product photo {prod}, brand {brand}, white background, professional studio lighting, luxury e-commerce, minimalist, brand logo space",
-        f"lifestyle photo {prod}, {brand} brand, person using product, modern interior, natural light, premium feel, aspirational",
-        f"product benefits visual {prod} by {brand}, clean icons, white blue design, professional infographic, brand colors",
-        f"before after {prod} {brand}, split screen transformation, powerful result, professional marketing visual",
-        f"sale banner {prod} {brand} brand, exclusive offer, premium design, bold colors, shop now button, luxury feel",
-    ]
-    titres = [
-        "1️⃣ Photo produit brandée",
-        "2️⃣ Lifestyle avec ta marque",
-        "3️⃣ Bénéfices brandés",
-        "4️⃣ Avant / Après",
-        "5️⃣ Call to Action brandé",
-    ]
-    return prompts, titres
-
+def nettoyer(text):
+    import re
+    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
+    text = re.sub(r'^#{1,4}\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\- ', '• ', text, flags=re.MULTILINE)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 def send_long(chat_id, text, reply_to=None):
     text = nettoyer(text)
@@ -591,8 +570,7 @@ def cmd_profil(message):
         f"• Niche : {profile.get('niche','Non défini')}\n"
         f"• Cible : {profile.get('cible','Non défini')}\n"
         f"• Pays : {profile.get('pays','Non défini')}\n"
-        f"• Budget ads : {profile.get('budget_ads','Non défini')}\n"
-        f"• Marque : {profile.get('marque','Non défini')}"
+        f"• Budget ads : {profile.get('budget_ads','Non défini')}"
         if profile else "⚠️ Aucun profil configuré"
     )
     bot.reply_to(message,
@@ -607,12 +585,21 @@ def cmd_profil(message):
         "Ex : /setbudget 500€/mois\n\n"
         "/setmarque [nom de ta marque]\n"
         "Ex : /setmarque LuxStyle\n\n"
-        + profil_actuel
+        + profil_actuel +
+        f"\n• Marque : {profile.get('marque','Non défini') if profile else 'Non défini'}"
     )
 
 
-# FIX : décorateur manquant sur setniche
-@bot.message_handler(commands=["setniche"])
+@bot.message_handler(commands=["setmarque"])
+def cmd_setmarque(message):
+    if not is_authorized(message.from_user.id): return
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2:
+        bot.reply_to(message, "Usage : /setmarque [nom de ta marque]\nEx : /setmarque LuxStyle"); return
+    profile = get_profile(message.from_user.id)
+    profile["marque"] = parts[1]
+    save_profile(message.from_user.id, profile)
+    bot.reply_to(message, f"✅ Marque enregistrée : {parts[1]}")
 def cmd_setniche(message):
     if not is_authorized(message.from_user.id): return
     parts = message.text.split(" ", 1)
@@ -655,17 +642,6 @@ def cmd_setbudget(message):
     profile["budget_ads"] = parts[1]
     save_profile(message.from_user.id, profile)
     bot.reply_to(message, f"✅ Budget ads : {parts[1]}")
-
-@bot.message_handler(commands=["setmarque"])
-def cmd_setmarque(message):
-    if not is_authorized(message.from_user.id): return
-    parts = message.text.split(" ", 1)
-    if len(parts) < 2:
-        bot.reply_to(message, "Usage : /setmarque [nom de ta marque]\nEx : /setmarque LuxStyle"); return
-    profile = get_profile(message.from_user.id)
-    profile["marque"] = parts[1]
-    save_profile(message.from_user.id, profile)
-    bot.reply_to(message, f"✅ Marque enregistrée : {parts[1]}")
 
 
 @bot.message_handler(commands=["tendances"])
@@ -880,7 +856,7 @@ def cmd_analyse(message):
     produit    = infos[0].strip()
     prix_achat = infos[1].strip()
 
-    bot.reply_to(message, f"⏳ Analyse de vente en cours pour *{produit}*...", parse_mode="Markdown")
+    bot.reply_to(message, f"⏳ Analyse de vente en cours pour *{produit}*...")
     result = analyser_vente(profile, produit, prix_achat)
     if result:
         send_long(message.chat.id, f"📊 ANALYSE DE VENTE\n\n{result}", reply_to=message)
@@ -921,6 +897,7 @@ def cmd_image(message):
     if type_image not in types_valides:
         bot.reply_to(message, "❌ Type invalide. Choisis : produit / lifestyle / pub / tiktok"); return
 
+    # Cas spécial : 5 images marketing pour fiche produit
     if type_image == "produit":
         bot.reply_to(message, f"🎨 Génération de 5 images pour *{produit}*...\n⏳ Environ 2-3 minutes", parse_mode="Markdown")
         prompts, titres = generer_5_images(produit, profile)
@@ -942,6 +919,7 @@ def cmd_image(message):
         bot.send_message(message.chat.id, "✅ Terminé ! Images prêtes pour Shopify, Ads et réseaux sociaux.")
         return
 
+    # Autres types : 1 image
     bot.reply_to(message, "🎨 Génération en cours... (30-60 secondes)")
     prompts_single = {
         "lifestyle": f"lifestyle photo of {produit}, person using it, natural light, modern setting, premium",
@@ -959,6 +937,30 @@ def cmd_image(message):
         )
     else:
         bot.reply_to(message, "❌ Génération échouée. Réessayez dans 1 minute.")
+
+
+def generer_5_images_marque(produit, marque, profile):
+    """Génère 5 images brandées à partir du nom produit"""
+    prod  = produit[:60]
+    brand = marque[:30]
+    niche = profile.get("niche", "e-commerce")
+
+    prompts = [
+        f"premium product photo {prod}, brand {brand}, white background, professional studio lighting, luxury e-commerce, minimalist, brand logo space",
+        f"lifestyle photo {prod}, {brand} brand, person using product, modern interior, natural light, premium feel, aspirational",
+        f"product benefits visual {prod} by {brand}, clean icons, white blue design, professional infographic, brand colors",
+        f"before after {prod} {brand}, split screen transformation, powerful result, professional marketing visual",
+        f"sale banner {prod} {brand} brand, exclusive offer, premium design, bold colors, shop now button, luxury feel",
+    ]
+
+    titres = [
+        "1️⃣ Photo produit brandée",
+        "2️⃣ Lifestyle avec ta marque",
+        "3️⃣ Bénéfices brandés",
+        "4️⃣ Avant / Après",
+        "5️⃣ Call to Action brandé",
+    ]
+    return prompts, titres
 
 
 @bot.message_handler(commands=["imagelien"])
@@ -985,8 +987,9 @@ def cmd_imagelien(message):
             f"brandées à ton nom : *{marque}*", parse_mode="Markdown"); return
 
     url = parts[1].strip()
-    bot.reply_to(message, "🔍 Analyse du produit en cours...")
+    bot.reply_to(message, f"🔍 Analyse du produit en cours...")
 
+    # Récupérer le nom du produit depuis le lien
     infos = analyser_depuis_lien(profile, url)
     if not infos:
         bot.reply_to(message,
@@ -1025,6 +1028,7 @@ def cmd_imagelien(message):
 
 @bot.message_handler(commands=["imagebrande"])
 def cmd_imagebrande(message):
+    """Version sans lien — juste le nom du produit"""
     if not is_authorized(message.from_user.id):
         bot.reply_to(message, "⛔ Accès non autorisé."); return
     profile = get_profile(message.from_user.id)
@@ -1069,10 +1073,6 @@ def cmd_imagebrande(message):
         f"✅ 5 images *{marque}* générées !\n\n"
         f"Prêtes pour Shopify, Ads et réseaux sociaux 🚀",
         parse_mode="Markdown")
-
-
-# FIX : décorateur manquant sur adduser
-@bot.message_handler(commands=["adduser"])
 def cmd_adduser(message):
     if not is_admin(message.from_user.id):
         bot.reply_to(message, "⛔ Admin seulement."); return
